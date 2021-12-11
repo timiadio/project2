@@ -50,9 +50,9 @@ Timi Adio oa5782
 
 ### Introduction 
 
-One of the datasets I chose was a sample from "Penn World Table (9.1) Macroeconomic Data for Select Countries, 1950-2017" with variables: country, isocode, year, human capital, real gdp, and share of labor compensation. The other dataset I chose was "Yearly populations of countries from 1960 to 2017" with variables: country, country code 1, country code 2, year, and population. I will be analyzing the datat from 2000-2017. I found both these datasets on https://vincentarelbundock.github.io/Rdatasets/datasets.html, which was on the Project 1 directions page. 
+One of the datasets I chose was a sample from "Penn World Table (9.1) Macroeconomic Data for Select Countries, 1950-2017" with variables: country, isocode, year, human capital, real gdp, and share of labor compensation. The other dataset I chose was "Yearly populations of countries from 1960 to 2017" with variables: country, country code 1, country code 2, year, and population. I will be analyzing the data from 2000-2017. I found both these datasets on https://vincentarelbundock.github.io/Rdatasets/datasets.html, which was on the Project 2 directions page. 
 
-I chose these two datasets because "country" was a common variable of theirs. I wanted to see if there ws correlation between population, or change in population, and different measures of economic health (human capital, real gdp, etc.). I'm also interested in how these metrics have changed throughout the years and if some countries seem to be "progressing" economically faster than others. Most importantly, I want to identify the 21st century leaders in some of these categories. This analysis will help me gauge which ones within this pool of countries deemed "rich" have, on paper, performed the best economically so that maybe I could study their economic models and see how their strengths can be implemented in other countries. I expect real gdp to grow with human capital index increase, while share of labor compensation slowly decreases over the years.
+I chose these two datasets because "country" was a common variable of theirs. I wanted to see if there was correlation between population, or change in population, and different measures of economic health (human capital, real gdp, etc.). There are 1160 observations and 20 different countries, so 20 countries per year. I later add a binary variable, 'population_tf,' that'll represent whether or not observations have population values greater than the mean population of the entire dataset. There are 580 observations each for TRUE and FALSE observations. Human capital (hc), real gdp (rgdpna), and share of labor compensation (labsh) represent exactly what they say. 
 
 ```{R}
 library(tidyverse)
@@ -90,7 +90,7 @@ pwt %>% mutate(cluster=as.factor(pwt_pam$clustering)) %>% ggpairs(columns = c(3:
 
 ```
 
-Population showed the greatest difference between the two clusters, while human capital showed the least difference. Cluster 1 represents countries-year combos with low real gdp and population. Cluster 2 represents country-year combos with high real gdp and population. 
+Population showed the greatest difference between the two clusters, while human capital showed the least difference. Cluster 1 represents countries-year combos with low real gdp and population. Cluster 2 represents country-year combos with high real gdp and population. The number of clusters was based on the largest average silhouette width. Only population vs rgdpna has strong correlation (0.916), while rgdpna vs hc has fairly weak correlation (0.408). All others have very weak correlation, so weak it's safe to assume there is no correlation between the associated variables. 
     
 ### Dimensionality Reduction with PCA
 
@@ -120,8 +120,11 @@ ggplot(pwt, aes(hc, rgdpna, color=population_tf)) + geom_point()
 # linear classifier code here
 logistic_fit <- glm(population_tf ~ hc + rgdpna, data=pwt, family="binomial")
 prob_reg <- predict(logistic_fit, type="response")
-class_diag(score=prob_reg, truth = pwt$population_tf, positive = 'TRUE')
+class_diag(score=prob_reg, truth = pwt$population_tf, positive = "TRUE")
 
+y <- pwt$population_tf
+y_hat <- ifelse(prob_reg>0.5, "TRUE", "FALSE")
+table(actual = y, predicted= y_hat)
 ```
 
 ```{R}
@@ -149,25 +152,28 @@ fit <- glm(population_tf ~ hc + rgdpna, data=train, family="binomial") ### SPECI
 probs <- predict(fit, newdata=test, type = "response") ### GET PREDICTIONS FROM THE TRAINED MODEL ON THE TEST SET HERE
 
 # get performance metrics for each fold
-diags<-rbind(diags,class_diag(probs,truth, positive="True")) 
+diags<-rbind(diags,class_diag(probs,truth, positive="TRUE")) 
 }
 
 #average performance metrics across all folds
 summarize_all(diags,mean)
 ```
 
-Discussion here
+Based on the 0.9984 AUC, the model is performing well. There is no noticeable decrease in AUC when predicting out of sample, so this model shows no signs of overfitting. The 0.0002 difference is negligible. Looking at the confusion matrix, only 2.07% of the predictions were incorrect (false positive or false negative). This is another sign the model performed well.
+
 
 ### Non-Parametric Classifier
 
 ```{R}
 library(caret)
 # non-parametric classifier code here
-knn_fit <- knn3(population_tf=="True" ~ hc + rgdpna, data=pwt)
-
+knn_fit <- knn3(population_tf ~ hc + rgdpna, data=pwt)
 #your code here
 prob_knn <- predict(knn_fit, newdata=pwt)[,2]
-class_diag(score=prob_knn, truth=pwt$population_tf, positive="True")
+class_diag(score=prob_knn, truth=pwt$population_tf, positive="TRUE")
+
+y_hat <- ifelse(prob_knn>0.5, "TRUE", "FALSE")
+table(actual = y, predicted= y_hat)
 ```
 
 ```{R}
@@ -188,19 +194,19 @@ test<-data[folds==i,]
 truth<-test$population_tf
 
 # train model
-fit <- knn_fit <- knn3(population_tf=="True" ~ hc + rgdpna, data=train) ### SPECIFY THE LOGISTIC REGRESSION MODEL FIT TO THE TRAINING SET HERE
+fit <- knn_fit <- knn3(population_tf=="TRUE" ~ hc + rgdpna, data=train) ### SPECIFY THE LOGISTIC REGRESSION MODEL FIT TO THE TRAINING SET HERE
 
 # test model
-probs <- predict(fit, newdata=test)[,1] ### GET PREDICTIONS FROM THE TRAINED MODEL ON THE TEST SET HERE
+probs <- predict(fit, newdata=test)[,2] ### GET PREDICTIONS FROM THE TRAINED MODEL ON THE TEST SET HERE
 
 # get performance metrics for each fold
-diags<-rbind(diags,class_diag(probs,truth,positive="True")) }
+diags<-rbind(diags,class_diag(probs,truth,positive="TRUE")) }
 
 #average performance metrics across all folds
 summarize_all(diags,mean)
 ```
 
-Discussion
+Based on the 0.9896 AUC, the model is performing well. There is an 0.032 decrease in AUC, which is insignificant, when predicting out of sample, so this model shows very little to no signs of overfitting. The linear model has slightly stronger cross-validation performance than the non-parametric model given its slightly higher AUC value (0.9984 vs 0.9896). Looking at the confusion matrix, only 5.26% of the predictions were incorrect (false positive or false negative). This is another sign the model performed well, but not a well as the linear model.
 
 
 ### Regression/Numeric Prediction
@@ -208,49 +214,59 @@ Discussion
 ```{R}
 # regression model code here
 pwt_reg <- pwt %>% select(-country, -year, -population_tf)
-fit<-lm(rgdpna~.,data=pwt_reg) #predict rgdpna from all other variables
+fit<-lm(rgdpna~.,data=pwt_reg) #predict rgdpna from all other numerical variables
 yhat <- predict(fit)
-
 mean((pwt_reg$rgdpna-yhat)^2) #MSE calculation
 ```
 
 ```{R}
 # cross-validation of regression model here
 set.seed(1234)
-k=5 #choose number of folds
-data<-pwt[sample(nrow(pwt)),] #randomly order rows
-folds<-cut(seq(1:nrow(pwt)),breaks=k,labels=F) #create folds
+k=5
+data<-pwt[sample(nrow(pwt)),] 
+folds<-cut(seq(1:nrow(pwt)),breaks=k,labels=F)
 diags<-NULL
 for(i in 1:k){
   train<-data[folds!=i,]
   test<-data[folds==i,]
-  ## Fit linear regression model to training set
+  
   fit<-lm(rgdpna~.,data=train)
-  ## Get predictions/y-hats on test set (fold i)
+  
   yhat<-predict(fit,newdata=test)
-  ## Compute prediction error  (MSE) for fold i
+  
   diags<-mean((test$rgdpna-yhat)^2) 
 }
-mean(diags) ## get average MSE across all folds
+mean(diags) #average MSE across all folds
 ```
 
-Discussion
+The MSE of the overall dataset is 103294463889. The average MSE across 5 testing folds is 35614228463. The MSE is very high, a sign that there may be overfitting. 
 
 ### Python 
 
 ```{R}
 library(reticulate)
+x <- "Hello"
 ```
 
 ```{python}
 # python code here
+x = "World"
+y = "Final"
+print(r.x + " " + x)
+
 ```
 
-Discussion
+```{R}
+library(reticulate)
+y <- "Project"
+cat(c(py$y, y))
+```
+
+I shared R's x object with Python by using "r.x" and shared Python's y object in r by using "py$y" in order to combine words from each language. I formed the phrase "Hello World" ("Hello" from R) in Python and the phrase "Final Project" ("Final" from Python) in R.
 
 ### Concluding Remarks
 
-Include concluding remarks here, if any
+As expected, there was high correlation between population and rgdp. because the models created were testing population based on hc and rgdpna, it was not surprising to see that the models had little trouble with accuracy given the high correlation between rgdp and population. 
 
 
 
