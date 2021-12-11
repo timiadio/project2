@@ -71,6 +71,7 @@ pwt %>% left_join(cpops, by=c("year", "country")) %>% na.omit -> pwt
 
 ```{R}
 library(cluster)
+library(ggplot2)
 # clustering code here
 clust_dat <- pwt %>% select(3:6)
 sil_width<-vector() #empty vector to hold mean sil width
@@ -84,7 +85,7 @@ ggplot()+geom_line(aes(x=1:10,y=sil_width))+scale_x_continuous(name="k",breaks=1
 pwt_pam <- clust_dat %>% pam(k=2)
 pwt_pam
 
-#library(GGally)
+library(GGally)
 pwt %>% mutate(cluster=as.factor(pwt_pam$clustering)) %>% ggpairs(columns = c(3:7), aes(color=cluster))
 
 ```
@@ -113,7 +114,6 @@ PC1 represents the gdp vs population axis because if a country-year combo is hig
 
 ```{R}
 pwt <- pwt %>% mutate(population_tf = population > mean(population))
-pwt <- pwt %>% mutate(hc_tf = hc > mean(hc))
 
 ggplot(pwt, aes(hc, rgdpna, color=population_tf)) + geom_point()
 
@@ -141,7 +141,7 @@ for(i in 1:k)
 train<-data[folds!=i,] 
 test<-data[folds==i,] 
 test
-truth<-test$hc_tf
+truth<-test$population_tf
 # train model
 fit <- glm(population_tf ~ hc + rgdpna, data=train, family="binomial") ### SPECIFY THE LOGISTIC REGRESSION MODEL FIT TO THE TRAINING SET HERE
 
@@ -163,7 +163,7 @@ Discussion here
 ```{R}
 library(caret)
 # non-parametric classifier code here
-knn_fit <- knn3(population_tf=="True" ~ hc + rgdpna, data=poke)
+knn_fit <- knn3(population_tf=="True" ~ hc + rgdpna, data=pwt)
 
 #your code here
 prob_knn <- predict(knn_fit, newdata=pwt)[,2]
@@ -172,6 +172,32 @@ class_diag(score=prob_knn, truth=pwt$population_tf, positive="True")
 
 ```{R}
 # cross-validation of np classifier here
+set.seed(322)
+k=10
+
+data<-sample_frac(pwt) #randomly order rows
+folds <- rep(1:k, length.out=nrow(data)) #create folds
+
+diags<-NULL
+
+i=1
+for(i in 1:k){
+# create training and test sets
+train<-data[folds!=i,] 
+test<-data[folds==i,] 
+truth<-test$population_tf
+
+# train model
+fit <- knn_fit <- knn3(population_tf=="True" ~ hc + rgdpna, data=train) ### SPECIFY THE LOGISTIC REGRESSION MODEL FIT TO THE TRAINING SET HERE
+
+# test model
+probs <- predict(fit, newdata=test)[,1] ### GET PREDICTIONS FROM THE TRAINED MODEL ON THE TEST SET HERE
+
+# get performance metrics for each fold
+diags<-rbind(diags,class_diag(probs,truth,positive="True")) }
+
+#average performance metrics across all folds
+summarize_all(diags,mean)
 ```
 
 Discussion
@@ -181,10 +207,31 @@ Discussion
 
 ```{R}
 # regression model code here
+pwt_reg <- pwt %>% select(-country, -year, -population_tf)
+fit<-lm(rgdpna~.,data=pwt_reg) #predict rgdpna from all other variables
+yhat <- predict(fit)
+
+mean((pwt_reg$rgdpna-yhat)^2) #MSE calculation
 ```
 
 ```{R}
 # cross-validation of regression model here
+set.seed(1234)
+k=5 #choose number of folds
+data<-pwt[sample(nrow(pwt)),] #randomly order rows
+folds<-cut(seq(1:nrow(pwt)),breaks=k,labels=F) #create folds
+diags<-NULL
+for(i in 1:k){
+  train<-data[folds!=i,]
+  test<-data[folds==i,]
+  ## Fit linear regression model to training set
+  fit<-lm(rgdpna~.,data=train)
+  ## Get predictions/y-hats on test set (fold i)
+  yhat<-predict(fit,newdata=test)
+  ## Compute prediction error  (MSE) for fold i
+  diags<-mean((test$rgdpna-yhat)^2) 
+}
+mean(diags) ## get average MSE across all folds
 ```
 
 Discussion
