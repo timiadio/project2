@@ -46,18 +46,24 @@ class_diag <- function(score, truth, positive, cutoff=.5){
 
 # Mining, Classification, Prediction
 
-## Name and EID here
+Timi Adio oa5782
 
 ### Introduction 
 
-Paragraph or two introducing your datasets and variables, why they are interesting to you, etc. See instructions for more information
+One of the datasets I chose was a sample from "Penn World Table (9.1) Macroeconomic Data for Select Countries, 1950-2017" with variables: country, isocode, year, human capital, real gdp, and share of labor compensation. The other dataset I chose was "Yearly populations of countries from 1960 to 2017" with variables: country, country code 1, country code 2, year, and population. I will be analyzing the datat from 2000-2017. I found both these datasets on https://vincentarelbundock.github.io/Rdatasets/datasets.html, which was on the Project 1 directions page. 
+
+I chose these two datasets because "country" was a common variable of theirs. I wanted to see if there ws correlation between population, or change in population, and different measures of economic health (human capital, real gdp, etc.). I'm also interested in how these metrics have changed throughout the years and if some countries seem to be "progressing" economically faster than others. Most importantly, I want to identify the 21st century leaders in some of these categories. This analysis will help me gauge which ones within this pool of countries deemed "rich" have, on paper, performed the best economically so that maybe I could study their economic models and see how their strengths can be implemented in other countries. I expect real gdp to grow with human capital index increase, while share of labor compensation slowly decreases over the years.
 
 ```{R}
 library(tidyverse)
 # read your datasets in here, e.g., with read_csv()
+countrypops <- read_csv("https://vincentarelbundock.github.io/Rdatasets/csv/gt/countrypops.csv")
+pwt_sample <- read_csv("https://vincentarelbundock.github.io/Rdatasets/csv/stevedata/pwt_sample.csv")
 
 # if your dataset needs tidying, do so here
-
+cpops <- countrypops %>% rename(country=country_name) %>% rename(x=X1) %>% select(-country_code_2, -country_code_3, -x)
+pwt <- pwt_sample %>% rename(x=X1)  %>% select(-isocode, -pop, -x)
+pwt %>% left_join(cpops, by=c("year", "country")) %>% na.omit -> pwt
 # any other code here
 ```
 
@@ -66,27 +72,88 @@ library(tidyverse)
 ```{R}
 library(cluster)
 # clustering code here
+clust_dat <- pwt %>% select(3:6)
+sil_width<-vector() #empty vector to hold mean sil width
+for(i in 2:10){  
+  kms <- kmeans(clust_dat,centers=i) #compute k-means solution for each k
+  sil <- silhouette(kms$cluster,dist(clust_dat)) #get sil widths
+  sil_width[i]<-mean(sil[,3]) #take averages (higher is better)
+}
+ggplot()+geom_line(aes(x=1:10,y=sil_width))+scale_x_continuous(name="k",breaks=1:10)
+
+pwt_pam <- clust_dat %>% pam(k=2)
+pwt_pam
+
+#library(GGally)
+pwt %>% mutate(cluster=as.factor(pwt_pam$clustering)) %>% ggpairs(columns = c(3:7), aes(color=cluster))
+
 ```
 
-Discussion of clustering here
-    
+Population showed the greatest difference between the two clusters, while human capital showed the least difference. Cluster 1 represents countries-year combos with low real gdp and population. Cluster 2 represents country-year combos with high real gdp and population. 
     
 ### Dimensionality Reduction with PCA
 
 ```{R}
 # PCA code here
+pwt_pca <- pwt %>% select(-country, -year)
+princomp(pwt_pca, cor=T) -> pca1
+summary(pca1, loadings=T) #get PCA summary
+
+eigval <-  pca1$sdev^2 #square to convert SDs to eigenvalues
+varprop=round(eigval/sum(eigval), 2) #proportion of var explained by each PC
+
+ggplot() + geom_bar(aes(y=varprop, x=1:4), stat="identity") + xlab("") + geom_path(aes(y=varprop, x=1:4)) + geom_text(aes(x=1:4, y=varprop, label=round(varprop, 2)), vjust=1, col="white", size=5) + scale_y_continuous(breaks=seq(0, .6, .2), labels = scales::percent) + scale_x_continuous(breaks=1:10)
+
+round(cumsum(eigval)/sum(eigval), 2)
 ```
 
-Discussions of PCA here. 
+PC1 represents the gdp vs population axis because if a country-year combo is high in one, it tends ot be high in the other. PC2 represents the labor shortage vs human capital axis because if a country-year combo is high in one, it tends to be high in the other. PC3 represents the human capital vs population axis because if a country-year combo is high in human capital it tends to have a low population. PC4 represents the population vs gdp axis because if a country-year combo has a high population, it tends to have a low gdp. The first three principal components account for 98% of the variance.
 
 ###  Linear Classifier
 
 ```{R}
+pwt <- pwt %>% mutate(population_tf = population > mean(population))
+pwt <- pwt %>% mutate(hc_tf = hc > mean(hc))
+
+ggplot(pwt, aes(hc, rgdpna, color=population_tf)) + geom_point()
+
 # linear classifier code here
+logistic_fit <- glm(population_tf ~ hc + rgdpna, data=pwt, family="binomial")
+prob_reg <- predict(logistic_fit, type="response")
+class_diag(score=prob_reg, truth = pwt$population_tf, positive = 'TRUE')
+
 ```
 
 ```{R}
 # cross-validation of linear classifier here
+set.seed(322)
+k=10
+
+data<-sample_frac(pwt) #randomly order rows
+folds <- rep(1:k, length.out=nrow(data)) #create folds
+
+diags<-NULL
+
+i=1
+for(i in 1:k)
+{
+# create training and test sets
+train<-data[folds!=i,] 
+test<-data[folds==i,] 
+test
+truth<-test$hc_tf
+# train model
+fit <- glm(population_tf ~ hc + rgdpna, data=train, family="binomial") ### SPECIFY THE LOGISTIC REGRESSION MODEL FIT TO THE TRAINING SET HERE
+
+# test model
+probs <- predict(fit, newdata=test, type = "response") ### GET PREDICTIONS FROM THE TRAINED MODEL ON THE TEST SET HERE
+
+# get performance metrics for each fold
+diags<-rbind(diags,class_diag(probs,truth, positive="True")) 
+}
+
+#average performance metrics across all folds
+summarize_all(diags,mean)
 ```
 
 Discussion here
@@ -96,6 +163,11 @@ Discussion here
 ```{R}
 library(caret)
 # non-parametric classifier code here
+knn_fit <- knn3(population_tf=="True" ~ hc + rgdpna, data=poke)
+
+#your code here
+prob_knn <- predict(knn_fit, newdata=pwt)[,2]
+class_diag(score=prob_knn, truth=pwt$population_tf, positive="True")
 ```
 
 ```{R}
